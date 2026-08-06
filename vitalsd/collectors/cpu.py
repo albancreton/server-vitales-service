@@ -14,7 +14,7 @@ import threading
 from . import read_int, read_str
 
 _PRIMARY_LABELS = ("Tctl", "Package id 0", "Tdie")
-_TZ_KEYWORDS = ("cpu", "soc", "pkg")
+_TZ_KEYWORDS = ("cpu", "soc", "pkg", "acpitz")
 
 
 class CpuCollector:
@@ -76,7 +76,13 @@ class CpuCollector:
                     continue
                 mc = read_int(os.path.join(tz, "temp"))
                 if mc is not None:
-                    temps[ttype] = round(mc / 1000.0, 1)
+                    # several zones can share one type (e.g. 7x acpitz);
+                    # suffix the zone number so readings don't collapse
+                    label = ttype
+                    if label in temps:
+                        zone_n = os.path.basename(tz)[len("thermal_zone"):]
+                        label = f"{ttype}:{zone_n}"
+                    temps[label] = round(mc / 1000.0, 1)
         primary = next((temps[k] for k in _PRIMARY_LABELS if k in temps), None)
         if primary is None and temps:
             primary = next(iter(temps.values()))

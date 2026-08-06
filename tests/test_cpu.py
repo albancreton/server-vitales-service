@@ -33,6 +33,20 @@ def test_cpu_thermal_zone_fallback(tmp_path):
     assert out["temperature_c"] == 45.5
 
 
+def test_cpu_thermal_zone_acpitz_deduped(tmp_path):
+    # Some ARM SoCs expose all CPU temps as several identically-typed
+    # acpitz zones; labels must not collapse into one dict key.
+    root = str(tmp_path)
+    write(root, "sys/class/thermal/thermal_zone0/type", "acpitz")
+    write(root, "sys/class/thermal/thermal_zone0/temp", "42700")
+    write(root, "sys/class/thermal/thermal_zone1/type", "acpitz")
+    write(root, "sys/class/thermal/thermal_zone1/temp", "40900")
+    col = CpuCollector(StubPsutil(), root=root)
+    out = col.sample()["cpu"]
+    assert out["temperatures_c"] == {"acpitz": 42.7, "acpitz:1": 40.9}
+    assert out["temperature_c"] == 42.7
+
+
 def test_cpu_model_from_cpuinfo(tmp_path):
     root = str(tmp_path)
     write(root, "proc/cpuinfo", "processor\t: 0\nmodel name\t: Fake CPU 9000")
