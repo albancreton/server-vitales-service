@@ -1,0 +1,6 @@
+[Unit]
+Description=vitalsd auto-update
+
+[Service]
+Type=oneshot
+ExecStart=@REPO@/deploy/update.sh

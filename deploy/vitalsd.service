@@ -1,0 +1,12 @@
+[Unit]
+Description=vitalsd - server vitals HTTP daemon
+After=network.target
+
+[Service]
+ExecStart=@REPO@/.venv/bin/python -m vitalsd
+WorkingDirectory=@REPO@
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
