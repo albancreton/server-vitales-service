@@ -1,6 +1,9 @@
 [Unit]
 Description=vitalsd - server vitals HTTP daemon
-After=network.target
+# Wait for udev to finish device enumeration: amdgpu initializes cards
+# asynchronously and a probe at network.target can miss late ones.
+After=network.target systemd-udev-settle.service
+Wants=systemd-udev-settle.service
 
 [Service]
 ExecStart=@REPO@/.venv/bin/python -m vitalsd

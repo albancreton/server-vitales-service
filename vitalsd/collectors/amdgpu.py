@@ -126,14 +126,19 @@ def _pci_names(root: str) -> dict[str, str]:
 class AmdGpuCollector:
     name = "gpu.amdgpu"
 
-    def __init__(self, gpus: list[_Gpu]):
+    def __init__(self, gpus: list[_Gpu], root: str = "/"):
         self.gpus = gpus
+        self._root = root
+        self._cards = frozenset(g.card for g in gpus)
 
-    @classmethod
-    def probe(cls, root: str = "/"):
-        pci_names = _pci_names(root)
-        gpus: list[_Gpu] = []
-        idx = 0
+    @staticmethod
+    def _ready_cards(root: str) -> list[tuple[str, str]]:
+        """[(cardN, .../cardN/device)] for AMD cards whose amdgpu init is done.
+
+        amdgpu brings cards up asynchronously after modprobe; a card whose
+        sysfs dir exists but has no gpu_busy_percent yet is still initializing.
+        """
+        cards: list[tuple[str, str]] = []
         pattern = os.path.join(root, "sys/class/drm/card[0-9]*")
         for card_path in sorted(glob.glob(pattern)):
             base = os.path.basename(card_path)
@@ -143,15 +148,37 @@ class AmdGpuCollector:
             if read_str(os.path.join(dev, "vendor")) != AMD_VENDOR:
                 continue
             if not os.path.exists(os.path.join(dev, "gpu_busy_percent")):
-                continue                # e.g. a display-only adapter
+                continue                # display-only adapter, or not ready yet
+            cards.append((base, dev))
+        return cards
+
+    @classmethod
+    def _discover(cls, root: str) -> list[_Gpu]:
+        pci_names = _pci_names(root)
+        gpus: list[_Gpu] = []
+        for idx, (base, dev) in enumerate(cls._ready_cards(root)):
             device_id = read_str(os.path.join(dev, "device"))
             name = pci_names.get(os.path.realpath(dev)) or f"AMD GPU {device_id or idx}"
             gpus.append(_Gpu(idx, base, dev, name))
-            idx += 1
-        return cls(gpus) if gpus else None
+        return gpus
+
+    @classmethod
+    def probe(cls, root: str = "/"):
+        gpus = cls._discover(root)
+        return cls(gpus, root) if gpus else None
+
+    def _rescan(self) -> None:
+        """Pick up cards that finished initializing (or were hot-plugged)
+        after probe(). Cheap: one directory glob + a few stats per call."""
+        cards = frozenset(c for c, _ in self._ready_cards(self._root))
+        if cards != self._cards:
+            self.gpus = self._discover(self._root)
+            self._cards = frozenset(g.card for g in self.gpus)
 
     def static_info(self) -> dict:
+        self._rescan()
         return {"gpus": [g.static_info() for g in self.gpus]}
 
     def sample(self) -> dict:
+        self._rescan()
         return {"gpus": [g.sample() for g in self.gpus]}

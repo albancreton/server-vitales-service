@@ -76,3 +76,30 @@ def test_zero_readings_are_not_null(tmp_path):
     g = col.sample()["gpus"][0]
     assert g["clocks_mhz"]["graphics"] == 0
     assert g["temperature_c"] == 0.0
+
+
+def test_rescan_picks_up_late_initialized_card(tmp_path):
+    root = str(tmp_path)
+    _amd_tree(root, "card1")
+    _amd_tree(root, "card2")
+    # card3 exists but amdgpu hasn't finished bringing it up (no busy knob yet)
+    write(root, "sys/class/drm/card3/device/vendor", "0x1002")
+    col = AmdGpuCollector.probe(root)
+    assert [g.card for g in col.gpus] == ["card1", "card2"]
+
+    _amd_tree(root, "card3")                  # init completes after probe
+    assert len(col.sample()["gpus"]) == 3
+    assert [g["index"] for g in col.static_info()["gpus"]] == [0, 1, 2]
+    assert [g.card for g in col.gpus] == ["card1", "card2", "card3"]
+
+
+def test_rescan_drops_removed_card(tmp_path):
+    import shutil
+    root = str(tmp_path)
+    _amd_tree(root, "card1")
+    _amd_tree(root, "card2")
+    col = AmdGpuCollector.probe(root)
+    shutil.rmtree(f"{root}/sys/class/drm/card1")
+    gpus = col.sample()["gpus"]
+    assert len(gpus) == 1 and gpus[0]["index"] == 0
+    assert col.gpus[0].card == "card2"
