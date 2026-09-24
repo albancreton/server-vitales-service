@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import sys
 
+from . import models
 from .collectors import probe_all
 from .server import VitalsServer
 from .state import State
@@ -12,9 +13,15 @@ def main():
     ap = argparse.ArgumentParser(prog="vitalsd")
     ap.add_argument("--host", default="0.0.0.0", help="bind address (default 0.0.0.0)")
     ap.add_argument("--port", type=int, default=9877, help="bind port (default 9877)")
+    ap.add_argument("--models-config", default=models.DEFAULT_CONFIG,
+                    help=f"loaded-model services config (default {models.DEFAULT_CONFIG}; "
+                         "absent = /models disabled)")
     args = ap.parse_args()
 
-    state = State(probe_all())
+    registry, models_error = models.load(args.models_config)
+    if models_error:
+        sys.stderr.write(f"vitalsd: /models disabled: {models_error}\n")
+    state = State(probe_all(), models=registry, models_error=models_error)
     caps = ", ".join(c.name for c in state.collectors) or "none"
     n_gpus = len(state.info_payload().get("gpus", []))
     sys.stderr.write(

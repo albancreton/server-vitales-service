@@ -216,6 +216,91 @@ _SCHEMAS = {
                        "failed this payload; their sections are absent.",
         "additionalProperties": {"type": "string"},
     },
+    "LoadedModel": {
+        "type": "object",
+        "description": "One model a service holds resident. Extra "
+                       "adapter-specific keys (size_bytes, type) may appear.",
+        "properties": {
+            "id": {"type": "string", "description": "Pass as `model` to unload it."},
+            "name": {"type": "string"},
+            "state": {"type": "string",
+                      "description": "ready | starting | stopping | ... (service-defined)"},
+            "vram_bytes": _null("integer"),
+            "size_bytes": _null("integer"),
+            "type": _null("string"),
+        },
+        "required": ["id", "name", "state", "vram_bytes"],
+    },
+    "ModelService": {
+        "type": "object",
+        "properties": {
+            "id": {"type": "string"},
+            "kind": {"type": "string", "enum": ["llamaswap", "comfyui", "fourfold"]},
+            "container": _null("string"),
+            "granularity": {"type": "string", "enum": ["model", "service"],
+                            "description": "model: unload accepts a model id; "
+                                           "service: all-or-nothing."},
+            "ok": {"type": "boolean"},
+            "error": _null("string"),
+            "vram_bytes": {**_null("integer"),
+                           "description": "GPU memory of the service's container "
+                                          "processes (NVML); null when unattributed."},
+            "models": {"type": "array",
+                       "items": {"$ref": "#/components/schemas/LoadedModel"}},
+        },
+        "required": ["id", "kind", "container", "granularity", "ok", "error",
+                     "vram_bytes", "models"],
+    },
+    "OtherGpuProcess": {
+        "type": "object",
+        "description": "A GPU process no configured service claims.",
+        "properties": {
+            "pid": {"type": "integer"},
+            "name": _null("string"),
+            "container": _null("string"),
+            "mem_bytes": _null("integer"),
+        },
+        "required": ["pid", "name", "container", "mem_bytes"],
+    },
+    "ModelsPayload": {
+        "type": "object",
+        "properties": {
+            "schema": {"type": "integer", "const": 1},
+            "host": {"type": "string"},
+            "ts": {"type": "number"},
+            "services": {"type": "array",
+                         "items": {"$ref": "#/components/schemas/ModelService"}},
+            "other": {"type": "array",
+                      "items": {"$ref": "#/components/schemas/OtherGpuProcess"}},
+        },
+        "required": ["schema", "host", "ts", "services", "other"],
+    },
+    "UnloadRequest": {
+        "type": "object",
+        "properties": {
+            "service": {"type": "string", "description": "A service id, or \"*\" for all."},
+            "model": {"type": "string", "description": "Omit to unload everything the service holds."},
+            "force": {"type": "boolean", "default": False,
+                      "description": "comfyui: restart even with prompts running/queued."},
+        },
+        "required": ["service"],
+    },
+    "UnloadResponse": {
+        "type": "object",
+        "properties": {
+            "results": {"type": "array", "items": {
+                "type": "object",
+                "properties": {
+                    "service": {"type": "string"},
+                    "ok": {"type": "boolean"},
+                    "action": {"type": "string"},
+                    "error": {"type": "string"},
+                },
+                "required": ["service", "ok"],
+            }},
+        },
+        "required": ["results"],
+    },
     "TickPayload": {
         "type": "object",
         "description": "One metrics snapshot; sections appear only when their "
@@ -289,6 +374,23 @@ DOCUMENT = {
                 "content": {"text/event-stream": {
                     "schema": {"type": "string"}}},
             }},
+        }},
+        "/models": {"get": {
+            "summary": "Models loaded across configured services",
+            "description": "Only when /etc/vitalsd/models.toml exists (see "
+                           "`models` in /info capabilities); 404 otherwise.",
+            "responses": _json_response("Loaded-model inventory.", "ModelsPayload"),
+        }},
+        "/models/unload": {"post": {
+            "summary": "Unload a model, a service, or everything",
+            "description": "Requires Content-Type: application/json, and "
+                           "`Authorization: Bearer <token>` when the config sets "
+                           "a token. No CORS: meant for server-side callers. "
+                           "200 all ok; 400 bad request; 401 bad token; 404 "
+                           "unknown service; 409 service busy; 502 upstream failure.",
+            "requestBody": {"required": True, "content": {"application/json": {
+                "schema": {"$ref": "#/components/schemas/UnloadRequest"}}}},
+            "responses": _json_response("Per-service results.", "UnloadResponse"),
         }},
         "/openapi.json": {"get": {
             "summary": "This document",

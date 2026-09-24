@@ -23,13 +23,14 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         sys.stderr.write(f"{time.strftime('%H:%M:%S')} {fmt % args}\n")
 
-    def _send_json(self, payload: dict, status: int = 200):
+    def _send_json(self, payload: dict, status: int = 200, cors: bool = True):
         body = json.dumps(payload, separators=(",", ":")).encode()
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
-        self.send_header("Access-Control-Allow-Origin", "*")
+        if cors:
+            self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
         self.wfile.write(body)
 
@@ -45,8 +46,44 @@ class Handler(BaseHTTPRequestHandler):
             self._stream(url)
         elif url.path == "/openapi.json":
             self._send_json(openapi.DOCUMENT)
+        elif url.path == "/models":
+            if self.state.models is None:
+                self._send_json({"error": "models not configured on this host"}, 404)
+            else:
+                self._send_json(self.state.models_payload())
         else:
             self._send_json({"error": "not found"}, 404)
+
+    def do_POST(self):
+        # The only mutating route. No CORS header, and a JSON content type is
+        # required: a cross-origin page can't send that without a preflight,
+        # which fails here — so browsers can't fire unloads even without a token.
+        url = urlparse(self.path)
+        models = self.state.models
+        if url.path != "/models/unload" or models is None:
+            self._send_json({"error": "not found"}, 404, cors=False)
+            return
+        if not models.authorized(self.headers.get("Authorization")):
+            self._send_json({"error": "unauthorized"}, 401, cors=False)
+            return
+        ctype = (self.headers.get("Content-Type") or "").split(";")[0].strip()
+        if ctype != "application/json":
+            self._send_json({"error": "Content-Type must be application/json"}, 415, cors=False)
+            return
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+            req = json.loads(self.rfile.read(min(length, 65536)) or b"{}")
+            service = req["service"]
+            model = req.get("model")
+            force = bool(req.get("force", False))
+            if not isinstance(service, str) or not isinstance(model, (str, type(None))):
+                raise TypeError
+        except (ValueError, KeyError, TypeError):
+            self._send_json({"error": 'body must be {"service": str, "model"?: str, "force"?: bool}'},
+                            400, cors=False)
+            return
+        status, results = models.unload(service, model, force)
+        self._send_json({"results": results}, status, cors=False)
 
     def _stream(self, url):
         try:

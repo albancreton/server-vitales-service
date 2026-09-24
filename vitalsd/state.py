@@ -23,10 +23,13 @@ def merge(dst: dict, src: dict) -> dict:
 
 
 class State:
-    def __init__(self, collectors: list, host: str | None = None):
+    def __init__(self, collectors: list, host: str | None = None,
+                 models=None, models_error: str | None = None):
         self.collectors = collectors
         self.host = host or socket.gethostname()
         self.started_at = time.time()
+        self.models = models  # vitalsd.models.Models, or None when not configured
+        self.models_error = models_error
 
     def _collect(self, payload: dict, method: str) -> dict:
         for c in self.collectors:
@@ -47,9 +50,27 @@ class State:
                 "kernel": platform.release(),
                 "os": platform.platform(),
             },
-            "capabilities": [c.name for c in self.collectors],
+            "capabilities": [c.name for c in self.collectors]
+                            + (["models"] if self.models else []),
         }
+        if self.models_error:
+            payload["errors"] = {"models": self.models_error}
         return self._collect(payload, "static_info")
+
+    def gpu_processes(self) -> list[dict]:
+        procs = []
+        for c in self.collectors:
+            if c.name.startswith("gpu."):
+                try:
+                    for g in c.sample().get("gpus", []):
+                        procs.extend(g.get("processes", []))
+                except Exception:
+                    pass
+        return procs
+
+    def models_payload(self) -> dict:
+        return {"schema": SCHEMA, "host": self.host,
+                **self.models.snapshot(self.gpu_processes())}
 
     def tick(self) -> dict:
         t0 = time.perf_counter_ns()

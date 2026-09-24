@@ -1,0 +1,29 @@
+# Loaded-model inventory + unload for GET /models and POST /models/unload.
+# Copy to /etc/vitalsd/models.toml, keep only the services this host runs,
+# then `systemctl restart vitalsd`. No file = the feature is off.
+
+# Optional. When set, POST /models/unload requires
+# "Authorization: Bearer <token>" (quickdash's proxy sends it server-side).
+# token = "change-me"
+
+# llama-swap: lists /running, unloads one model or all.
+[[service]]
+id = "llama-swap"
+kind = "llamaswap"
+url = "http://127.0.0.1:11343"
+container = "llama-swap"   # optional: attributes its GPU processes' VRAM
+
+# ComfyUI: model names need the comfy-vitals custom node; unload restarts the
+# container (refused while prompts are running/queued unless forced).
+[[service]]
+id = "comfyui"
+kind = "comfyui"
+url = "http://127.0.0.1:8188"
+container = "comfyui"      # required
+
+# Fourfold upscaler: needs its POST /api/unload route.
+[[service]]
+id = "fourfold"
+kind = "fourfold"
+url = "https://upscale.local.alban.me"
+container = "upscaler"

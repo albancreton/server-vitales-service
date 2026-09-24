@@ -39,7 +39,8 @@ def test_document_shape():
     assert DOCUMENT["openapi"].startswith("3.1")
     assert DOCUMENT["info"]["version"] == vitalsd.__version__
     assert set(DOCUMENT["paths"]) == {
-        "/health", "/info", "/metrics", "/stream", "/openapi.json"}
+        "/health", "/info", "/metrics", "/stream", "/openapi.json",
+        "/models", "/models/unload"}
 
 
 def test_tick_schema_covers_real_payload():
@@ -54,3 +55,10 @@ def test_info_schema_covers_real_payload():
     info = State(probe_all()).info_payload()
     declared = set(DOCUMENT["components"]["schemas"]["InfoPayload"]["properties"])
     assert set(info) <= declared, f"undeclared keys: {set(info) - declared}"
+
+
+def test_models_schema_covers_real_payload():
+    from vitalsd.models import Models
+    payload = State([], models=Models([])).models_payload()
+    schemas = DOCUMENT["components"]["schemas"]
+    assert set(payload) == set(schemas["ModelsPayload"]["properties"])
