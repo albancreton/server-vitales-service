@@ -110,7 +110,8 @@ class ComfyUI(Adapter):
             if "HTTP 404" in str(e):
                 return []  # plugin not installed: VRAM still shows via processes
             raise
-        return [{"id": m["name"], "name": m["name"], "state": "ready",
+        # state: "ready", or "loading" while the running prompt brings it in.
+        return [{"id": m["name"], "name": m["name"], "state": m.get("state", "ready"),
                  "vram_bytes": m.get("loaded_bytes"), "size_bytes": m.get("size_bytes"),
                  "type": m.get("type")}
                 for m in (body or {}).get("models", [])]

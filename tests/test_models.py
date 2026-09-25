@@ -269,3 +269,9 @@ def test_models_404_when_not_configured():
     finally:
         srv.shutdown()
         srv.server_close()
+
+
+def test_comfy_passes_loading_state_through(fake_http):
+    fake_http({("GET", "http://comfy/vitals/models"): {"models": [
+        {"name": "Qwen Image 2.1", "state": "loading", "loaded_bytes": None}]}})
+    assert comfy().list()[0]["state"] == "loading"
